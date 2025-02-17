@@ -188,13 +188,13 @@
          adc_select_input(1);
          uint16_t adc_y = adc_read();
  
-         int32_t x_pos = (adc_x * (WIDTH - SQUARE_SIZE)) / 4095;
-         int32_t y_pos = (adc_y * (HEIGHT - SQUARE_SIZE)) / 4095;
+         int32_t x_pos = (adc_x * (WIDTH - SQUARE_SIZE)) / 2046;
+         int32_t y_pos = (adc_y * (HEIGHT - SQUARE_SIZE)) / 2046;
  
          update_leds(adc_x, adc_y);
          update_display(x_pos, y_pos);
          handle_buttons();
  
-         sleep_ms(10);
+         sleep_ms(5);
      }
  }
