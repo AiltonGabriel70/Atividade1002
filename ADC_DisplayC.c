@@ -1,17 +1,6 @@
 /***********************************************************
  * Sistema de Controle com Joystick e Display OLED
- * 
- * Este programa utiliza um Raspberry Pi Pico para:
- * - Ler entradas analógicas de um joystick
- * - Controlar LEDs RGB via PWM
- * - Exibir gráficos em um display OLED SSD1306
- * - Implementar interface com botões físicos
- * 
- * Funcionalidades principais:
- * - Quadrado controlado por joystick na tela
- * - Borda fixa permanente
- * - Controle de intensidade de LEDs pelo joystick
- * - Sistema anti-rejeição (debounce) para botões
+ * Versão Final com Centralização Corrigida
  ***********************************************************/
 
  #include <stdio.h>
@@ -43,9 +32,11 @@
  #define WIDTH 128
  #define HEIGHT 64
  #define SQUARE_SIZE 8
- #define BORDER_WIDTH 2  // Largura da borda fixa
+ #define BORDER_WIDTH 2
+ #define CENTER_X ((WIDTH - SQUARE_SIZE) / 2)    // 60
+ #define CENTER_Y ((HEIGHT - SQUARE_SIZE) / 2)   // 28
  
- // Variáveis globais de estado
+ // Variáveis globais
  volatile bool joystick_button_pressed = false;
  volatile bool button_a_pressed = false;
  volatile uint32_t last_joystick_time = 0;
@@ -54,11 +45,19 @@
  bool pwm_enabled = true;
  bool green_led_on = false;
  
- // Variáveis de controle do PWM
+ // Variáveis PWM
  uint red_slice, green_slice, blue_slice;
  uint red_channel, green_channel, blue_channel;
  
  ssd1306_t ssd;
+ 
+ // Protótipos de função
+ void gpio_irq_handler(uint gpio, uint32_t events);
+ void setup_pwm();
+ void update_leds(int32_t adc_x, int32_t adc_y);
+ void update_display(int32_t x_pos, int32_t y_pos);
+ void handle_buttons();
+ int32_t map_value(int32_t value, int32_t in_min, int32_t in_max, int32_t out_min, int32_t out_max);
  
  void gpio_irq_handler(uint gpio, uint32_t events) {
      uint32_t now = time_us_32();
@@ -78,38 +77,30 @@
  }
  
  void setup_pwm() {
-     // Configuração do LED vermelho
-     gpio_set_function(LED_RED, GPIO_FUNC_PWM);
-     red_slice = pwm_gpio_to_slice_num(LED_RED);
-     red_channel = pwm_gpio_to_channel(LED_RED);
-     pwm_set_wrap(red_slice, PWM_MAX);
-     pwm_set_chan_level(red_slice, red_channel, 0);
-     pwm_set_enabled(red_slice, true);
+     // Configuração dos LEDs PWM
+     const uint leds[] = {LED_RED, LED_GREEN, LED_BLUE};
+     for (int i = 0; i < 3; i++) {
+         gpio_set_function(leds[i], GPIO_FUNC_PWM);
+         uint slice = pwm_gpio_to_slice_num(leds[i]);
+         pwm_set_wrap(slice, PWM_MAX);
+         pwm_set_chan_level(slice, pwm_gpio_to_channel(leds[i]), 0);
+         pwm_set_enabled(slice, true);
+     }
+ }
  
-     // Configuração do LED verde
-     gpio_set_function(LED_GREEN, GPIO_FUNC_PWM);
-     green_slice = pwm_gpio_to_slice_num(LED_GREEN);
-     green_channel = pwm_gpio_to_channel(LED_GREEN);
-     pwm_set_wrap(green_slice, PWM_MAX);
-     pwm_set_chan_level(green_slice, green_channel, 0);
-     pwm_set_enabled(green_slice, true);
- 
-     // Configuração do LED azul
-     gpio_set_function(LED_BLUE, GPIO_FUNC_PWM);
-     blue_slice = pwm_gpio_to_slice_num(LED_BLUE);
-     blue_channel = pwm_gpio_to_channel(LED_BLUE);
-     pwm_set_wrap(blue_slice, PWM_MAX);
-     pwm_set_chan_level(blue_slice, blue_channel, 0);
-     pwm_set_enabled(blue_slice, true);
+ int32_t map_value(int32_t value, int32_t in_min, int32_t in_max, int32_t out_min, int32_t out_max) {
+     return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
  }
  
  void update_leds(int32_t adc_x, int32_t adc_y) {
+     // Cálculo da intensidade dos LEDs
      int32_t diff_x = adc_x - 2048;
      uint16_t duty_red = (abs(diff_x) * PWM_MAX) / 2048;
- 
+     
      int32_t diff_y = adc_y - 2048;
      uint16_t duty_blue = (abs(diff_y) * PWM_MAX) / 2048;
  
+     // Aplica configurações PWM
      if (pwm_enabled) {
          pwm_set_chan_level(red_slice, red_channel, duty_red);
          pwm_set_chan_level(blue_slice, blue_channel, duty_blue);
@@ -117,15 +108,13 @@
          pwm_set_chan_level(red_slice, red_channel, 0);
          pwm_set_chan_level(blue_slice, blue_channel, 0);
      }
- 
-     uint16_t green_duty = green_led_on ? PWM_MAX : 0;
-     pwm_set_chan_level(green_slice, green_channel, green_duty);
+     pwm_set_chan_level(green_slice, green_channel, green_led_on ? PWM_MAX : 0);
  }
  
  void update_display(int32_t x_pos, int32_t y_pos) {
      ssd1306_fill(&ssd, false);
      
-     // Borda fixa dupla
+     // Desenha borda dupla
      ssd1306_rect(&ssd, 0, 0, WIDTH, HEIGHT, true, false);
      ssd1306_rect(&ssd, 
                  BORDER_WIDTH, 
@@ -134,7 +123,7 @@
                  HEIGHT - (BORDER_WIDTH*2), 
                  true, false);
      
-     // Quadrado móvel
+     // Desenha quadrado centralizado
      ssd1306_rect(&ssd, x_pos, y_pos, SQUARE_SIZE, SQUARE_SIZE, true, true);
      
      ssd1306_send_data(&ssd);
@@ -155,19 +144,22 @@
  int main() {
      stdio_init_all();
      adc_init();
+     
+     // Configuração do ADC
      adc_gpio_init(JOYSTICK_X_PIN);
      adc_gpio_init(JOYSTICK_Y_PIN);
- 
+     
      setup_pwm();
  
-     gpio_init(JOYSTICK_PB);
-     gpio_set_dir(JOYSTICK_PB, GPIO_IN);
-     gpio_pull_up(JOYSTICK_PB);
+     // Configuração dos botões
+     const uint buttons[] = {JOYSTICK_PB, BUTTON_A};
+     for (int i = 0; i < 2; i++) {
+         gpio_init(buttons[i]);
+         gpio_set_dir(buttons[i], GPIO_IN);
+         gpio_pull_up(buttons[i]);
+     }
  
-     gpio_init(BUTTON_A);
-     gpio_set_dir(BUTTON_A, GPIO_IN);
-     gpio_pull_up(BUTTON_A);
- 
+     // Configuração de interrupções
      gpio_set_irq_enabled_with_callback(JOYSTICK_PB, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
      gpio_set_irq_enabled_with_callback(BUTTON_A, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
  
@@ -182,14 +174,33 @@
      ssd1306_fill(&ssd, false);
      ssd1306_send_data(&ssd);
  
+     // Configuração dos canais PWM
+     red_slice = pwm_gpio_to_slice_num(LED_RED);
+     red_channel = pwm_gpio_to_channel(LED_RED);
+     green_slice = pwm_gpio_to_slice_num(LED_GREEN);
+     green_channel = pwm_gpio_to_channel(LED_GREEN);
+     blue_slice = pwm_gpio_to_slice_num(LED_BLUE);
+     blue_channel = pwm_gpio_to_channel(LED_BLUE);
+ 
      while (true) {
+         // Leitura dos eixos do joystick
          adc_select_input(0);
          uint16_t adc_x = adc_read();
          adc_select_input(1);
          uint16_t adc_y = adc_read();
  
-         int32_t x_pos = (adc_x * (WIDTH - SQUARE_SIZE)) / 4095;
-         int32_t y_pos = (adc_y * (HEIGHT - SQUARE_SIZE)) / 4095;
+         // Mapeamento preciso das posições
+         int32_t x_pos = map_value(adc_x, 0, 2048, 0, WIDTH - SQUARE_SIZE);
+         int32_t y_pos = map_value(4095 - adc_y, 0, 1000, 0, HEIGHT - SQUARE_SIZE); 
+ 
+         // Ajuste fino de centralização
+         const int32_t center_offset = 2; // Compensação para calibração precisa
+         x_pos = (x_pos + CENTER_X - center_offset) / 2;
+         y_pos = (y_pos + CENTER_Y - center_offset) / 2;
+ 
+         // Garante que está dentro dos limites
+         x_pos = (x_pos < 0) ? 0 : (x_pos > WIDTH - SQUARE_SIZE) ? WIDTH - SQUARE_SIZE : x_pos;
+         y_pos = (y_pos < 0) ? 0 : (y_pos > HEIGHT - SQUARE_SIZE) ? HEIGHT - SQUARE_SIZE : y_pos;
  
          update_leds(adc_x, adc_y);
          update_display(x_pos, y_pos);
