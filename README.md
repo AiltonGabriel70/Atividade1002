@@ -1,4 +1,5 @@
 Instruções do Programa: Sistema de Controle com Joystick e Display OLED
+
 Este programa controla um sistema que utiliza um joystick para movimentar um quadrado na tela de um display OLED e ajusta a intensidade de LEDs RGB com base na posição do joystick. Além disso, há botões para interagir com o sistema, como ligar/desligar o LED verde e habilitar/desabilitar o controle PWM dos LEDs.
 
 Funcionalidades Principais
@@ -141,6 +142,7 @@ map_value:
 Função auxiliar para mapear valores de uma faixa para outra (usada para mapear a posição do joystick para a tela e LEDs).
 
 Considerações Finais
+
 O código está otimizado para funcionar com o Raspberry Pi Pico.
 
 Certifique-se de que o hardware esteja conectado corretamente antes de executar o programa.
