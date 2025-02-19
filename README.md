@@ -148,3 +148,7 @@ O código está otimizado para funcionar com o Raspberry Pi Pico.
 Certifique-se de que o hardware esteja conectado corretamente antes de executar o programa.
 
 O sistema é projetado para ser interativo e responsivo, com atualizações rápidas do display e dos LEDs.
+
+
+Link do Video: https://youtube.com/shorts/KuTjZGsNTkY?si=9ZyjoHJdw-WFbBXB
+
